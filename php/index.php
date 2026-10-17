@@ -131,31 +131,76 @@ $container->set('helper', function ($c) {
             $options += ['all_comments' => false];
             $all_comments = $options['all_comments'];
 
+            if (count($results) === 0) {
+                return [];
+            }
+
+            $post_user_ids = array_values(array_unique(array_column($results, 'user_id')));
+            $placeholders = implode(',', array_fill(0, count($post_user_ids), '?'));
+            $ps = $this->db()->prepare("SELECT * FROM `users` WHERE `id` IN ({$placeholders})");
+            $ps->execute($post_user_ids);
+            $users = [];
+            foreach ($ps->fetchAll(PDO::FETCH_ASSOC) as $user) {
+                $users[$user['id']] = $user;
+            }
+
             $posts = [];
             foreach ($results as $post) {
-                $post['comment_count'] = $this->fetch_first('SELECT COUNT(*) AS `count` FROM `comments` WHERE `post_id` = ?', $post['id'])['count'];
-                $query = 'SELECT * FROM `comments` WHERE `post_id` = ? ORDER BY `created_at` DESC';
-                if (!$all_comments) {
-                    $query .= ' LIMIT 3';
-                }
-
-                $ps = $this->db()->prepare($query);
-                $ps->execute([$post['id']]);
-                $comments = $ps->fetchAll(PDO::FETCH_ASSOC);
-                foreach ($comments as &$comment) {
-                    $comment['user'] = $this->fetch_first('SELECT * FROM `users` WHERE `id` = ?', $comment['user_id']);
-                }
-                unset($comment);
-                $post['comments'] = array_reverse($comments);
-
-                $post['user'] = $this->fetch_first('SELECT * FROM `users` WHERE `id` = ?', $post['user_id']);
-                if ($post['user']['del_flg'] == 0) {
+                if (isset($users[$post['user_id']]) && $users[$post['user_id']]['del_flg'] == 0) {
+                    $post['user'] = $users[$post['user_id']];
                     $posts[] = $post;
                 }
                 if (count($posts) >= POSTS_PER_PAGE) {
                     break;
                 }
             }
+
+            if (count($posts) === 0) {
+                return [];
+            }
+
+            $post_ids = array_column($posts, 'id');
+            $placeholders = implode(',', array_fill(0, count($post_ids), '?'));
+
+            $ps = $this->db()->prepare("SELECT `post_id`, COUNT(*) AS `count` FROM `comments` WHERE `post_id` IN ({$placeholders}) GROUP BY `post_id`");
+            $ps->execute($post_ids);
+            $comment_counts = array_fill_keys($post_ids, 0);
+            foreach ($ps->fetchAll(PDO::FETCH_ASSOC) as $comment_count) {
+                $comment_counts[$comment_count['post_id']] = $comment_count['count'];
+            }
+
+            $ps = $this->db()->prepare("SELECT * FROM `comments` WHERE `post_id` IN ({$placeholders}) ORDER BY `post_id`, `created_at` DESC");
+            $ps->execute($post_ids);
+            $comments_by_post_id = array_fill_keys($post_ids, []);
+            $comment_user_ids = [];
+            foreach ($ps->fetchAll(PDO::FETCH_ASSOC) as $comment) {
+                if ($all_comments || count($comments_by_post_id[$comment['post_id']]) < 3) {
+                    $comments_by_post_id[$comment['post_id']][] = $comment;
+                    $comment_user_ids[] = $comment['user_id'];
+                }
+            }
+
+            if (count($comment_user_ids) > 0) {
+                $comment_user_ids = array_values(array_unique($comment_user_ids));
+                $placeholders = implode(',', array_fill(0, count($comment_user_ids), '?'));
+                $ps = $this->db()->prepare("SELECT * FROM `users` WHERE `id` IN ({$placeholders})");
+                $ps->execute($comment_user_ids);
+                foreach ($ps->fetchAll(PDO::FETCH_ASSOC) as $user) {
+                    $users[$user['id']] = $user;
+                }
+            }
+
+            foreach ($posts as &$post) {
+                $post['comment_count'] = $comment_counts[$post['id']];
+                $comments = $comments_by_post_id[$post['id']];
+                foreach ($comments as &$comment) {
+                    $comment['user'] = $users[$comment['user_id']];
+                }
+                unset($comment);
+                $post['comments'] = array_reverse($comments);
+            }
+            unset($post);
+
             return $posts;
         }
 
