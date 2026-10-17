@@ -18,8 +18,10 @@ services:
       context: php/
       dockerfile: Dockerfile
     depends_on:
-      - mysql
-      - memcached
+      mysql:
+        condition: service_healthy
+      memcached:
+        condition: service_started # ここまで4行を追加。MySQLの起動を待つ形に
     environment:
       ISUCONP_DB_HOST: mysql
       ISUCONP_DB_PORT: 3306
@@ -56,6 +58,12 @@ services:
         limits:
           cpus: "1"
           memory: 1g
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot -proot --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 30s # ここまで6行を追加。起動完了を確認する。
 
   memcached:
     image: memcached:1.6
