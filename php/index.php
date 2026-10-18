@@ -205,7 +205,7 @@ $container->set('helper', function ($c) {
         }
 
     };
-});
+}); # N+1を避けるため、関連データを一括取得して投稿へ設定する。
 
 AppFactory::setContainer($container);
 $app = AppFactory::create();
@@ -345,9 +345,17 @@ $app->get('/logout', function (Request $request, Response $response) {
 
 $app->get('/', function (Request $request, Response $response) {
     $me = $this->get('helper')->get_session_user();
-
+    
     $db = $this->get('db');
-    $ps = $db->prepare('SELECT `id`, `user_id`, `body`, `mime`, `created_at` FROM `posts` ORDER BY `created_at` DESC');
+    $sql = '
+        SELECT `posts`.`id`, `posts`.`user_id`, `posts`.`body`, `posts`.`mime`, `posts`.`created_at`
+        FROM `posts`
+        INNER JOIN `users` ON `posts`.`user_id` = `users`.`id`
+        WHERE `users`.`del_flg` = 0
+        ORDER BY `posts`.`created_at` DESC
+        LIMIT ' . POSTS_PER_PAGE;
+
+    $ps = $db->prepare($sql);
     $ps->execute();
     $results = $ps->fetchAll(PDO::FETCH_ASSOC);
     $posts = $this->get('helper')->make_posts($results);
