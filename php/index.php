@@ -533,11 +533,9 @@ $app->post('/admin/banned', function (Request $request, Response $response) {
     }
 
     $db = $this->get('db');
-    $query = 'UPDATE `users` SET `del_flg` = ? WHERE `id` = ?';
-    foreach ($params['uid'] as $id) {
-        $ps = $db->prepare($query);
-        $ps->execute([1, $id]);
-    }
+    $query = 'UPDATE `users` SET `del_flg` = ? WHERE `id` IN (' . implode(',', array_fill(0, count($params['uid']), '?')) . ')';
+    $ps = $db->prepare($query);
+    $ps->execute(array_merge([1], $params['uid']));
 
     return redirect($response, '/admin/banned', 302);
 });
