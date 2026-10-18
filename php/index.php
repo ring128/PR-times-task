@@ -371,7 +371,7 @@ $app->get('/posts', function (Request $request, Response $response) {
     $params = $request->getQueryParams();
     $max_created_at = $params['max_created_at'] ?? null;
     $db = $this->get('db');
-    $ps = $db->prepare('SELECT `id`, `user_id`, `body`, `mime`, `created_at` FROM `posts` WHERE `created_at` <= ? ORDER BY `created_at` DESC');
+    $ps = $db->prepare('SELECT `posts`.`id`, `posts`.`user_id`, `posts`.`body`, `posts`.`mime`, `posts`.`created_at` FROM `posts` INNER JOIN `users` ON `posts`.`user_id` = `users`.`id` WHERE `posts`.`created_at` <= ? AND `users`.`del_flg` = 0 ORDER BY `posts`.`created_at` DESC LIMIT ' . POSTS_PER_PAGE);
     $ps->execute([$max_created_at === null ? null : $max_created_at]);
     $results = $ps->fetchAll(PDO::FETCH_ASSOC);
     $posts = $this->get('helper')->make_posts($results);
@@ -551,7 +551,7 @@ $app->get('/@{account_name}', function (Request $request, Response $response, $a
         return $response->withStatus(404);
     }
 
-    $ps = $db->prepare('SELECT `id`, `user_id`, `body`, `created_at`, `mime` FROM `posts` WHERE `user_id` = ? ORDER BY `created_at` DESC');
+    $ps = $db->prepare('SELECT `id`, `user_id`, `body`, `created_at`, `mime` FROM `posts` WHERE `user_id` = ? ORDER BY `created_at` DESC LIMIT ' . POSTS_PER_PAGE);
     $ps->execute([$user['id']]);
     $results = $ps->fetchAll(PDO::FETCH_ASSOC);
     $posts = $this->get('helper')->make_posts($results);
